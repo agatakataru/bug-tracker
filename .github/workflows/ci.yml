@@ -21,16 +21,27 @@ jobs:
             - name: Install go-junit-report
               run: go install github.com/jstemmer/go-junit-report/v2@latest
 
-            - name: Execute Backed Unit Tests
+
+            - name: Execute Backend Unit Tests
               working-directory: ./bugtracker-backend
               run: |
+                set -e
                 go test -json -coverprofile=coverage.out -covermode=atomic ./...
                 go tool cover -func=coverage.out > coverage.txt
-                echo "## Go T"est Coverage Report" >> $GITHUB_STEP_SUMMARY
+
+                echo "## Go Test Coverage Report" >> $GITHUB_STEP_SUMMARY
                 echo '```' >> $GITHUB_STEP_SUMMARY
                 cat coverage.txt >> $GITHUB_STEP_SUMMARY
                 echo '```' >> $GITHUB_STEP_SUMMARY
+
+                # Ensure go-junit-report is in PATH
+                export PATH="$PATH:$(go env GOPATH)/bin"
                 go test -v ./... 2>&1 | go-junit-report > test-results.xml
+
+            - name: List backend directory after tests
+              working-directory: ./bugtracker-backend
+              run: |
+                ls -l
 
             - name: Publish backend test results
               uses: dorny/test-reporter@v1
