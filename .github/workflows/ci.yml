@@ -1,0 +1,110 @@
+name: CI
+
+on:
+    push:
+        branches:
+            - main
+    pull_request:
+        branches:
+            - main
+    workflow_dispatch:
+
+jobs:
+    unit-tests-backend:
+        runs-on: ubuntu-latest
+        outputs:
+          coverage: ${{ steps.test-backend.outputs.report }}
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Set Up Go
+              uses: actions/setup-go@v4
+              with: 
+                go-version: "1.21"
+                cache-dependency: bugtracker-backend/go.sum
+
+            - name: Install go-junit-report
+              run: go install github.com/jstemmer/go-junit-report/v2@latest
+
+
+            - name: Execute Backend Unit Tests
+              id: test-backend
+              working-directory: ./bugtracker-backend
+              run: |
+                set -e
+                go test -json -coverprofile=coverage.out -covermode=atomic ./...
+                go tool cover -func=coverage.out > coverage.txt
+
+                echo "## Go Test Coverage Report" >> $GITHUB_STEP_SUMMARY
+                echo '```' >> $GITHUB_STEP_SUMMARY
+                cat coverage.txt >> $GITHUB_STEP_SUMMARY
+                echo '```' >> $GITHUB_STEP_SUMMARY
+
+                echo "report<<EOF" >> $GITHUB_OUTPUT
+                cat coverage.txt >> $GITHUB_OUTPUT
+                echo "EOF" >> $GITHUB_OUTPUT 
+
+                # Ensure go-junit-report is in PATH
+                export PATH="$PATH:$(go env GOPATH)/bin"
+                go test -v ./... 2>&1 | go-junit-report > test-results.xml
+
+            - name: List backend directory after tests
+              working-directory: ./bugtracker-backend
+              run: |
+                ls -l
+
+            - name: Publish backend test results
+              uses: dorny/test-reporter@v1
+              if: always()
+              with:
+                name: Backend Unit Tests Report
+                path: bugtracker-backend/test-results.xml
+                reporter: jest-junit
+
+    unit-tests-frontend:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Set Up Node.js
+              uses: actions/setup-node@v4
+              with:
+                node-version: "20"
+                cache: npm
+                cache-dependency-path: bugtracker-frontend/package-lock.json
+
+            - name: Execute Frontend Unit Tests
+              working-directory: ./bugtracker-frontend
+              run: |
+                npm ci
+                npm test | tee full_output.txt
+
+                echo "## Frontend Test Coverage Report" >> $GITHUB_STEP_SUMMARY
+                echo '```' >> $GITHUB_STEP_SUMMARY
+                cat full_output.txt >> $GITHUB_STEP_SUMMARY
+                echo '```' >> $GITHUB_STEP_SUMMARY
+
+            - name: Publish Frontend Test Results
+              uses: dorny/test-reporter@v1
+              if: always()
+              with:
+                name: Frontend Unit Tests Report
+                path: bugtracker-frontend/test-results.xml
+                reporter: jest-junit
+
+    create-coverage-comment:
+      if: github.event_name == 'pull_request'
+      needs: [unit-tests-backend]
+      runs-on: ubuntu-latest
+      permissions:
+        pull-requests: write
+      steps:
+        - name: Create BE Coverage Comment
+          uses: peter-evans/create-or-update-comment@v4
+          with:
+            issue-number: ${{ github.event.pull_request.number }}
+            body: |
+              ## Backend Test Coverage Report
+              ```
+              ${{ needs.unit-tests-backend.outputs.coverage }}
+              ```
