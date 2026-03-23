@@ -148,10 +148,10 @@ jobs:
               retention-days: 30
 
           - name: Publish API test results
-            uses: dorny/test-reporter/v1
+            uses: dorny/test-reporter/@v1
             if: always()
             with: 
               name: API Tests Report
               path: ./tests-api/test-results/*.xml
               reporter: jest-junit
-              
+
